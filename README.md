@@ -2,11 +2,10 @@
 
 **VikingLib** is a modular combat mechanics, character statistic, and damage calculation framework for Valheim. It decouples Valheim's combat and stat systems from monolithic vanilla methods, providing a deterministic foundation for custom combat overhauls, RPG progression, weapon packs, and perk mods.
 
-![Combat Dossier](combat_dossier.png)
-![Staggered Target Combat](staggered_greyling.png)
+![Combat Dossier](https://raw.githubusercontent.com/DigitalVikings/VikingLib/main/combat_dossier.png)
+![Staggered Target Combat](https://raw.githubusercontent.com/DigitalVikings/VikingLib/main/staggered_greyling.png)
 
-> [!WARNING]
-> **Work in Progress (Pre-Release v0.1.0)**: This framework is in active development and has not been tested extensively across all game configurations. Features, internal APIs, and mechanics may change, and unintended edge cases may occur. Backup your character and world saves before testing.
+> ⚠️ **Work in Progress (Pre-Release v0.1.0)**: This framework is in active development and has not been tested extensively across all game configurations. Features, internal APIs, and mechanics may change, and unintended edge cases may occur. Backup your character and world saves before testing.
 
 ---
 
