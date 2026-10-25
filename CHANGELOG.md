@@ -2,6 +2,10 @@
 
 All notable changes to **VikingLib** will be documented in this file.
 
+## [0.2.1] - 2026-10-25
+### Fixed
+- Fixed critical game startup error triggered by cooking station drop yield telemetry registration.
+
 ## [0.2.0] - 2026-10-25
 
 ### Added

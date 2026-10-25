@@ -5,7 +5,7 @@
 ![Combat Dossier](https://raw.githubusercontent.com/DigitalVikings/VikingLib/main/combat_dossier.png)
 ![Staggered Target Combat](https://raw.githubusercontent.com/DigitalVikings/VikingLib/main/staggered_greyling.png)
 
-> ⚠️ **Work in Progress (Pre-Release v0.2.0)**: This framework is in active development and has not been tested extensively across all game configurations. Features, internal APIs, and mechanics may change, and unintended edge cases may occur. Backup your character and world saves before testing.
+> ⚠️ **Work in Progress (Pre-Release v0.2.1)**: This framework is in active development and has not been tested extensively across all game configurations. Features, internal APIs, and mechanics may change, and unintended edge cases may occur. Backup your character and world saves before testing.
 
 ---
 

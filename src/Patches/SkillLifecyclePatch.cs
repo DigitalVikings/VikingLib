@@ -877,7 +877,7 @@ namespace VikingLib.Patches
 
         [HarmonyPatch(typeof(CookingStation), "RPC_RemoveDoneItem")]
         [HarmonyPrefix]
-        public static void PrefixCookingStationRPC_RemoveDoneItem(CookingStation __instance, long sender, Vector3 userPos, int count)
+        public static void PrefixCookingStationRPC_RemoveDoneItem(CookingStation __instance, long sender, Vector3 userPoint, int amount)
         {
             if (!ModConfig.ModEnabled.Value || ModConfig.LogDropYields == null || !ModConfig.LogDropYields.Value) return;
             if (__instance == null) return;
@@ -890,7 +890,7 @@ namespace VikingLib.Patches
             if (Mathf.Abs(yield - 1.0f) <= 0.001f) return;
 
             float chance = yield - 1.0f;
-            string outcome = count > 1 ? $"SUCCESS (+{count - 1})" : "MISSED";
+            string outcome = amount > 1 ? $"SUCCESS (+{amount - 1})" : "MISSED";
             string stationName = Localization.instance != null ? Localization.instance.Localize(__instance.gameObject.name.Replace("(Clone)", "")) : __instance.gameObject.name;
 
             VikingLibPlugin.Log.LogInfo($"[VikingLib Yield] [Cooking] {stationName} (Yield: {yield:F2}x, Bonus Chance: {chance:P0} -> {outcome})");
