@@ -14,7 +14,7 @@ namespace VikingLib
     {
         public const string ModGuid = "com.digitalvikings.vikinglib";
         public const string ModName = "VikingLib";
-        public const string ModVersion = "0.1.0";
+        public const string ModVersion = "0.2.0";
 
         public static VikingLibPlugin Instance { get; private set; } = null!;
         public static ManualLogSource Log { get; internal set; } = null!;
