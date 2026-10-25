@@ -32,6 +32,8 @@ namespace VikingLib.Combat.Telemetry
         public float RollLowerBound { get; set; }
         public float RollUpperBound { get; set; }
         public List<RollStepRecord> RollSteps { get; } = new();
+        public int AttackerLevel { get; set; } = 1;
+        public float CreatureLevelMultiplier { get; set; } = 1.0f;
 
         // Structured step records
         public List<TierRecord> AttackerTierRecords { get; } = new();
@@ -83,7 +85,14 @@ namespace VikingLib.Combat.Telemetry
         private string FormatTree()
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"[VikingLib Hit #{HitId}] {AttackerName} -> {TargetName}");
+            string attackerStarSuffix = "";
+            if (AttackerLevel > 1)
+            {
+                int stars = AttackerLevel - 1;
+                string starIcons = new string('★', stars);
+                attackerStarSuffix = $" [{starIcons} Level {AttackerLevel}]";
+            }
+            sb.AppendLine($"[VikingLib Hit #{HitId}] {AttackerName}{attackerStarSuffix} -> {TargetName}");
 
             // Weapon Origin line
             if (!string.IsNullOrEmpty(WeaponName) && WeaponBaseDamage != null)
@@ -94,8 +103,11 @@ namespace VikingLib.Combat.Telemetry
                 string skillInfo = (SkillType != Skills.SkillType.None && RollSteps.Count == 0)
                     ? $" | {SkillType} Skill {SkillLevel:F0}{boundsInfo}"
                     : boundsInfo;
+                string levelInfo = CreatureLevelMultiplier > 1.001f
+                    ? $" | Level Scaling: x{CreatureLevelMultiplier:F2} ({AttackerLevel - 1} Stars)"
+                    : "";
                 string attackSuffix = !string.IsNullOrEmpty(AttackDisplayName) ? $" [{AttackDisplayName}]" : "";
-                sb.AppendLine($"├── Weapon: {WeaponName}{attackSuffix} | Base: {FormatDamageTypes(WeaponBaseDamage.Value)}{skillInfo}");
+                sb.AppendLine($"├── Weapon: {WeaponName}{attackSuffix} | Base: {FormatDamageTypes(WeaponBaseDamage.Value)}{skillInfo}{levelInfo}");
 
                 if (RollSteps.Count > 0)
                 {
@@ -113,7 +125,10 @@ namespace VikingLib.Combat.Telemetry
                 string boundsInfo = (RollLowerBound > 0f && RollUpperBound > 0f)
                     ? $" (Roll: {SkillRollFactor:F2}x in [{RollLowerBound:F2} .. {RollUpperBound:F2}])"
                     : "";
-                sb.AppendLine($"├── Attacker Base: {FormatDamageTypes(InitialDamage)}{boundsInfo}");
+                string levelInfo = CreatureLevelMultiplier > 1.001f
+                    ? $" | Level Scaling: x{CreatureLevelMultiplier:F2} ({AttackerLevel - 1} Stars)"
+                    : "";
+                sb.AppendLine($"├── Attacker Base: {FormatDamageTypes(InitialDamage)}{boundsInfo}{levelInfo}");
 
                 if (RollSteps.Count > 0)
                 {
@@ -129,19 +144,28 @@ namespace VikingLib.Combat.Telemetry
 
             bool hasAttackerMods = AttackerTierRecords.Count > 0;
             bool hasMitigation = MitigationRecords.Count > 0;
+            var attackerModSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.AttackerModifiers);
             var targetDefSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.TargetDefenses);
             var postHitSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.PostHitProcs);
 
-            if (!hasAttackerMods && !hasMitigation && targetDefSteps.Count == 0 && postHitSteps.Count == 0)
+            if (!hasAttackerMods && attackerModSteps.Count == 0 && !hasMitigation && targetDefSteps.Count == 0 && postHitSteps.Count == 0)
             {
                 sb.AppendLine("├── No modifications applied (Pure Hit).");
             }
             else
             {
                 // Phase: AttackerModifiers
-                if (hasAttackerMods)
+                if (hasAttackerMods || attackerModSteps.Count > 0)
                 {
                     sb.AppendLine("├── Phase: AttackerModifiers");
+                    for (int i = 0; i < attackerModSteps.Count; i++)
+                    {
+                        var step = attackerModSteps[i];
+                        bool isLastStep = (i == attackerModSteps.Count - 1) && !hasAttackerMods;
+                        string branch = isLastStep ? "└──" : "├──";
+                        sb.AppendLine($"│   {branch} {step.Source}: {step.Operation}");
+                    }
+
                     for (int i = 0; i < AttackerTierRecords.Count; i++)
                     {
                         var rec = AttackerTierRecords[i];
@@ -269,7 +293,14 @@ namespace VikingLib.Combat.Telemetry
         {
             var sb = new StringBuilder();
             string attackSuffix = !string.IsNullOrEmpty(AttackDisplayName) ? $" [{AttackDisplayName}]" : "";
-            sb.AppendLine($"[VikingLib Hit #{HitId}] {AttackerName} ({WeaponName ?? "Unarmed"}{attackSuffix}) -> {TargetName}");
+            string attackerStarSuffix = "";
+            if (AttackerLevel > 1)
+            {
+                int stars = AttackerLevel - 1;
+                string starIcons = new string('★', stars);
+                attackerStarSuffix = $" [{starIcons} Level {AttackerLevel}]";
+            }
+            sb.AppendLine($"[VikingLib Hit #{HitId}] {AttackerName}{attackerStarSuffix} ({WeaponName ?? "Unarmed"}{attackSuffix}) -> {TargetName}");
 
             if (RollSteps.Count > 0)
             {
@@ -289,15 +320,21 @@ namespace VikingLib.Combat.Telemetry
                 sb.AppendLine($"├── Origin: {FormatDamageTypes(WeaponBaseDamage.Value)} * {SkillRollFactor:F2} Roll{boundsInfo} ({SkillType} {SkillLevel:F0})");
             }
 
+            var compactAttackerSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.AttackerModifiers);
             var compactTargetDefSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.TargetDefenses);
             var compactPostHitSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.PostHitProcs);
 
-            if (AttackerTierRecords.Count == 0 && MitigationRecords.Count == 0 && compactTargetDefSteps.Count == 0 && compactPostHitSteps.Count == 0)
+            if (AttackerTierRecords.Count == 0 && compactAttackerSteps.Count == 0 && MitigationRecords.Count == 0 && compactTargetDefSteps.Count == 0 && compactPostHitSteps.Count == 0)
             {
                 sb.AppendLine("├── No modifications applied.");
             }
             else
             {
+                foreach (var step in compactAttackerSteps)
+                {
+                    sb.AppendLine($"├── Phase 1: AttackerModifiers [{step.Source}] {step.Operation}");
+                }
+
                 foreach (var rec in AttackerTierRecords)
                 {
                     sb.AppendLine($"├── Phase 1: AttackerModifiers ({rec.Type}: {rec.BaseValue:F1} -> {rec.ResultingValue:F1})");
@@ -345,7 +382,17 @@ namespace VikingLib.Combat.Telemetry
                 ? $" (Roll: {SkillRollFactor:F2}x in [{RollLowerBound:F2} .. {RollUpperBound:F2}])"
                 : $" (Roll: {SkillRollFactor:F2}x)";
             string attackSuffix = !string.IsNullOrEmpty(AttackDisplayName) ? $" [{AttackDisplayName}]" : "";
-            sb.AppendLine($"Attacker : {AttackerName} ({WeaponName ?? "Unarmed"}{attackSuffix}) | {SkillType} Skill {SkillLevel:F0}{boundsInfo}");
+            string attackerStarSuffix = "";
+            if (AttackerLevel > 1)
+            {
+                int stars = AttackerLevel - 1;
+                string starIcons = new string('★', stars);
+                attackerStarSuffix = $" [{starIcons} Level {AttackerLevel}]";
+            }
+            string levelInfo = CreatureLevelMultiplier > 1.001f
+                ? $" | Level Scaling: x{CreatureLevelMultiplier:F2} ({AttackerLevel - 1} Stars)"
+                : "";
+            sb.AppendLine($"Attacker : {AttackerName}{attackerStarSuffix} ({WeaponName ?? "Unarmed"}{attackSuffix}) | {SkillType} Skill {SkillLevel:F0}{boundsInfo}{levelInfo}");
             sb.AppendLine($"Target   : {TargetName}");
             sb.AppendLine("------------------------------------------------------------------------------");
 
@@ -365,15 +412,26 @@ namespace VikingLib.Combat.Telemetry
                 sb.AppendLine("------------------------------------------------------------------------------");
             }
 
+            var auditAttackerSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.AttackerModifiers);
             var auditTargetDefSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.TargetDefenses);
             var auditPostHitSteps = GenericSteps.FindAll(s => s.Phase == DamagePhase.PostHitProcs);
 
-            if (AttackerTierRecords.Count == 0 && MitigationRecords.Count == 0 && auditTargetDefSteps.Count == 0 && auditPostHitSteps.Count == 0)
+            if (AttackerTierRecords.Count == 0 && auditAttackerSteps.Count == 0 && MitigationRecords.Count == 0 && auditTargetDefSteps.Count == 0 && auditPostHitSteps.Count == 0)
             {
                 sb.AppendLine($"DAMAGE: {FormatDamageTypes(FinalDamage)} (Unmodified Hit)");
             }
             else
             {
+                if (auditAttackerSteps.Count > 0)
+                {
+                    sb.AppendLine("ATTACKER MODIFIERS:");
+                    foreach (var step in auditAttackerSteps)
+                    {
+                        sb.AppendLine($"  [{step.Source}] {step.Operation}");
+                    }
+                    sb.AppendLine("------------------------------------------------------------------------------");
+                }
+
                 foreach (var rec in AttackerTierRecords)
                 {
                     sb.AppendLine($"DAMAGE TYPE: {rec.Type}");

@@ -242,13 +242,29 @@ namespace VikingLib.Patches
             float yield = CharacterStatManager.GetStat(DestructibleDropContext.LastAttacker, DestructibleDropContext.ActiveYieldStat);
             if (Mathf.Abs(yield - 1.0f) <= 0.0001f) return;
 
-            var scaledList = new List<GameObject>();
+            string source = DestructibleDropContext.ActiveYieldStat == CharacterStatType.WoodcuttingYield ? "Woodcutting" : "Mining";
+
+            var counts = new Dictionary<GameObject, int>();
+            var order = new List<GameObject>();
             for (int i = 0; i < __result.Count; i++)
             {
                 var prefab = __result[i];
                 if (prefab == null) continue;
+                if (!counts.ContainsKey(prefab))
+                {
+                    counts[prefab] = 0;
+                    order.Add(prefab);
+                }
+                counts[prefab]++;
+            }
+
+            var scaledList = new List<GameObject>();
+            for (int i = 0; i < order.Count; i++)
+            {
+                var prefab = order[i];
+                int baseCount = counts[prefab];
                 var itemDrop = prefab.GetComponent<ItemDrop>();
-                int count = CharacterStatManager.ResolveDropCount(yield, itemDrop?.m_itemData, 1);
+                int count = CharacterStatManager.ResolveDropCount(yield, itemDrop?.m_itemData, baseCount, source, prefab.name);
                 for (int k = 0; k < count; k++)
                 {
                     scaledList.Add(prefab);

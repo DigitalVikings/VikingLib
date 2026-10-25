@@ -879,6 +879,10 @@ namespace VikingLib.UI.Tooltip
                 {
                     identical = false;
                 }
+                else if (profile.GetStep(prevKey).OverrideDamageType != profile.GetStep(curKey).OverrideDamageType)
+                {
+                    identical = false;
+                }
                 else
                 {
                     foreach (var dt in activeTypes)

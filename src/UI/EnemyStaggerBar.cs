@@ -19,6 +19,7 @@ namespace VikingLib.UI
         private static readonly Dictionary<Character, GuiBar> _bars = new();
         private static FieldInfo? _mHudsField;
         private static FieldInfo? _mHealthFastField;
+        private static FieldInfo? _mNameField;
         private static readonly Color AmberColor = new(0.96f, 0.62f, 0.04f); // #F59E0B
 
         private static bool EnsureReflected()
@@ -33,6 +34,14 @@ namespace VikingLib.UI
                 if (hudDataType != null)
                 {
                     _mHealthFastField = AccessTools.Field(hudDataType, "m_healthFast");
+                }
+            }
+            if (_mNameField == null)
+            {
+                var hudDataType = AccessTools.Inner(typeof(EnemyHud), "HudData");
+                if (hudDataType != null)
+                {
+                    _mNameField = AccessTools.Field(hudDataType, "m_name");
                 }
             }
             return _mHudsField != null && _mHealthFastField != null;
@@ -129,7 +138,7 @@ namespace VikingLib.UI
                 }
 
                 float poisePct = StaggerManager.GetPoisePercentage(character);
-                bool isStaggering = character.IsStaggering() || StaggerManager.IsArtificiallyStunned(character);
+                bool isStaggering = character.IsStaggering() || StaggerManager.IsStaggering(character);
 
                 if (poisePct > 0.001f || isStaggering)
                 {
@@ -141,6 +150,24 @@ namespace VikingLib.UI
                         float pulse = Mathf.PingPong(Time.time * 6f, 1f);
                         bar.SetColor(Color.Lerp(AmberColor, Color.white, pulse));
                         bar.SetValue(1f);
+
+                        // Highlight nameplate if target is a boss
+                        if (character.IsBoss() && _mHudsField != null)
+                        {
+                            var dict = (IDictionary?)_mHudsField.GetValue(__instance);
+                            if (dict != null && dict.Contains(character))
+                            {
+                                object? hudData = dict[character];
+                                if (hudData != null && _mNameField != null)
+                                {
+                                    var nameText = (TMPro.TextMeshProUGUI?)_mNameField.GetValue(hudData);
+                                    if (nameText != null)
+                                    {
+                                        nameText.text = $"{Localization.instance.Localize(character.GetHoverName())} <color=#F59E0B>[STAGGERED]</color>";
+                                    }
+                                }
+                            }
+                        }
                     }
                     else
                     {

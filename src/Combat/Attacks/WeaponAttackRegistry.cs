@@ -106,9 +106,14 @@ namespace VikingLib.Combat.Attacks
                 {
                     if (kvp.Key.Equals("secondary", StringComparison.OrdinalIgnoreCase)) continue;
                     noSecProfile.AddStep(kvp.Key, kvp.Value.DefaultMultiplier, kvp.Value.Cleave);
+                    var step = noSecProfile.GetStep(kvp.Key);
+                    step.OverrideDamageType = kvp.Value.OverrideDamageType;
+                    step.OnHitStatusEffect = kvp.Value.OnHitStatusEffect;
+                    step.StatusEffectDuration = kvp.Value.StatusEffectDuration;
+                    step.StatusEffectValue = kvp.Value.StatusEffectValue;
                     foreach (var overrideKvp in kvp.Value.TypeMultipliers)
                     {
-                        noSecProfile.GetStep(kvp.Key).SetMultiplier(overrideKvp.Key, overrideKvp.Value);
+                        step.SetMultiplier(overrideKvp.Key, overrideKvp.Value);
                     }
                 }
                 return noSecProfile;

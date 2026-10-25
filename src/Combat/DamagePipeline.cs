@@ -914,11 +914,32 @@ namespace VikingLib.Combat
         }
 
         /// <summary>
-        /// Evaluates and applies the physical triad Pierce Precision multiplier (Tier 3) to pierce damage on the context.
+        /// Evaluates and applies the physical triad Pierce Precision multiplier (Tier 3) to melee pierce damage on the context.
+        /// Ranged attacks (Bows/Crossbows) and non-player enemies are excluded.
         /// </summary>
         public static void ApplyPiercePrecision(DamageContext ctx)
         {
-            if (ctx == null || !ModConfig.StaggerOverhaulEnabled.Value) return;
+            if (ctx == null || !ModConfig.StaggerOverhaulEnabled.Value || !ModConfig.EnablePiercePrecision.Value) return;
+
+            // Only player attacks gain pierce precision (enemies do not get damage bonuses against players)
+            if (ctx.Attacker == null || !ctx.Attacker.IsPlayer()) return;
+
+            // Exclude ranged attacks (Bows, Crossbows) from melee pierce precision
+            if (ctx.Hit != null)
+            {
+                bool isRanged = ctx.Hit.m_ranged ||
+                                ctx.Hit.m_skill == Skills.SkillType.Bows ||
+                                ctx.Hit.m_skill == Skills.SkillType.Crossbows;
+                if (isRanged) return;
+
+                if (WeaponAttackRegistry.TryGetHitAttack(ctx.Hit, out var atkInfo) && atkInfo.Weapon != null)
+                {
+                    if (atkInfo.Weapon.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow)
+                    {
+                        return;
+                    }
+                }
+            }
 
             if (ctx.GetDamage(DamageType.Pierce) > 0.001f)
             {
@@ -932,10 +953,15 @@ namespace VikingLib.Combat
 
         /// <summary>
         /// Evaluates post-mitigation slash damage and inflicts a Multi-Slice Bleed status effect slice over 10s.
+        /// Only player attacks inflict bleed lacerations; non-player enemies do not bleed the player.
         /// </summary>
         public static void ApplySlashBleed(DamageContext ctx)
         {
-            if (ctx == null || !ModConfig.StaggerOverhaulEnabled.Value || ctx.Target == null || ctx.IsPreview || ctx.IsCancelled || ctx.IsKillingBlow) return;
+            if (ctx == null || !ModConfig.StaggerOverhaulEnabled.Value || !ModConfig.EnableSlashBleed.Value ||
+                ctx.Target == null || ctx.IsPreview || ctx.IsCancelled || ctx.IsKillingBlow) return;
+
+            // Only player attacks inflict slash bleed lacerations (enemies do not bleed the player)
+            if (ctx.Attacker == null || !ctx.Attacker.IsPlayer()) return;
 
             float finalSlash = ctx.GetDamage(DamageType.Slash);
             if (finalSlash > 0.01f && Defense.EntityDefenseRegistry.CanBleed(ctx.Target))
@@ -1091,23 +1117,18 @@ namespace VikingLib.Combat
         {
             if (trace == null || attacker == null) return;
 
-            ItemDrop.ItemData? weapon = (attacker as Humanoid)?.GetCurrentWeapon();
-            if (weapon != null)
+            trace.AttackerLevel = attacker.GetLevel();
+            if (!attacker.IsPlayer() && trace.AttackerLevel > 1)
             {
-                trace.WeaponName = Localization.instance != null
-                    ? Localization.instance.Localize(weapon.m_shared.m_name)
-                    : weapon.m_shared.m_name;
-                trace.WeaponBaseDamage = weapon.GetDamage();
-                trace.SkillType = weapon.m_shared.m_skillType;
-                if (attacker is Player player)
-                {
-                    trace.SkillLevel = player.GetSkillLevel(trace.SkillType);
-                }
+                trace.CreatureLevelMultiplier = 1f + (trace.AttackerLevel - 1) * 0.5f;
             }
 
+            ItemDrop.ItemData? weapon = null;
             AttackStepModifiers? stepMods = null;
+
             if (WeaponAttackRegistry.TryGetHitAttack(hit, out var atkInfo))
             {
+                weapon = atkInfo.Weapon;
                 trace.AttackStepKey = atkInfo.StepKey;
                 stepMods = atkInfo.Profile.GetStep(atkInfo.StepKey);
                 if (atkInfo.IsPickaxeSpecial && atkInfo.PickaxeChunkCount > 1)
@@ -1127,10 +1148,29 @@ namespace VikingLib.Combat
             {
                 trace.AttackStepKey = DamageRollPipeline.LastRoll.AttackKey;
                 trace.AttackDisplayName = DamageRollPipeline.LastRoll.AttackDisplayName;
-                if (weapon != null)
+            }
+
+            if (weapon == null && attacker is Humanoid humanoid)
+            {
+                weapon = humanoid.GetCurrentWeapon();
+            }
+
+            if (weapon != null)
+            {
+                trace.WeaponName = Localization.instance != null
+                    ? Localization.instance.Localize(weapon.m_shared.m_name)
+                    : weapon.m_shared.m_name;
+                trace.WeaponBaseDamage = weapon.GetDamage();
+                trace.SkillType = weapon.m_shared.m_skillType;
+                if (attacker is Player player)
+                {
+                    trace.SkillLevel = player.GetSkillLevel(trace.SkillType);
+                }
+
+                if (stepMods == null && !string.IsNullOrEmpty(trace.AttackStepKey))
                 {
                     var profile = WeaponAttackRegistry.GetProfile(weapon);
-                    stepMods = profile.GetStep(DamageRollPipeline.LastRoll.AttackKey);
+                    stepMods = profile.GetStep(trace.AttackStepKey);
                 }
             }
 
@@ -1140,6 +1180,36 @@ namespace VikingLib.Combat
                 var baseDmg = trace.WeaponBaseDamage.Value;
                 AttackModifierPatch.ApplyAttackStepBaseDamage(ref baseDmg, stepMods);
                 trace.WeaponBaseDamage = baseDmg;
+            }
+
+            // Align base physical damage types with the physical distribution of the incoming hit
+            // (e.g. creature damage overrides or weapon damage conversions that mapped physical damage)
+            if (trace.WeaponBaseDamage != null)
+            {
+                var baseDmg = trace.WeaponBaseDamage.Value;
+                float hitPhys = hit.m_damage.m_blunt + hit.m_damage.m_slash + hit.m_damage.m_pierce;
+                float basePhys = baseDmg.m_blunt + baseDmg.m_slash + baseDmg.m_pierce;
+
+                if (hitPhys > 0.001f && basePhys > 0.001f)
+                {
+                    float hitBluntRatio = hit.m_damage.m_blunt / hitPhys;
+                    float hitSlashRatio = hit.m_damage.m_slash / hitPhys;
+                    float hitPierceRatio = hit.m_damage.m_pierce / hitPhys;
+
+                    float baseBluntRatio = baseDmg.m_blunt / basePhys;
+                    float baseSlashRatio = baseDmg.m_slash / basePhys;
+                    float basePierceRatio = baseDmg.m_pierce / basePhys;
+
+                    if (Mathf.Abs(hitBluntRatio - baseBluntRatio) > 0.01f ||
+                        Mathf.Abs(hitSlashRatio - baseSlashRatio) > 0.01f ||
+                        Mathf.Abs(hitPierceRatio - basePierceRatio) > 0.01f)
+                    {
+                        baseDmg.m_blunt = basePhys * hitBluntRatio;
+                        baseDmg.m_slash = basePhys * hitSlashRatio;
+                        baseDmg.m_pierce = basePhys * hitPierceRatio;
+                        trace.WeaponBaseDamage = baseDmg;
+                    }
+                }
             }
 
             if (DamageRollPipeline.LastRoll != null && DamageRollPipeline.LastRoll.Attacker == attacker)

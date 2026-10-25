@@ -25,6 +25,9 @@ namespace VikingLib.Configuration
         public static ConfigEntry<bool> ShowStatsInGlossary { get; private set; } = null!;
         public static ConfigEntry<float> GlossaryRefreshInterval { get; private set; } = null!;
         public static ConfigEntry<bool> StaggerOverhaulEnabled { get; private set; } = null!;
+        public static ConfigEntry<bool> EnemyPhysicalInflictsStagger { get; private set; } = null!;
+        public static ConfigEntry<bool> EnablePiercePrecision { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableSlashBleed { get; private set; } = null!;
         public static ConfigEntry<StaggerBarDisplayMode> EnemyStaggerBarMode { get; private set; } = null!;
         public static ConfigEntry<float> PiercePrecisionMultiplier { get; private set; } = null!;
         public static ConfigEntry<float> SlashBleedPercent { get; private set; } = null!;
@@ -32,8 +35,10 @@ namespace VikingLib.Configuration
         public static ConfigEntry<float> StaggerDecayRate { get; private set; } = null!;
         public static ConfigEntry<float> StaggerDropoffSeconds { get; private set; } = null!;
         public static ConfigEntry<float> StaggerThresholdMultiplier { get; private set; } = null!;
+        public static ConfigEntry<float> StaggerDurationSeconds { get; private set; } = null!;
         public static ConfigEntry<StaggerBarDisplayMode> EnemyStatusEffectsMode { get; private set; } = null!;
         public static ConfigEntry<bool> EnemyStatusEffectsShowText { get; private set; } = null!;
+        public static ConfigEntry<bool> LogDropYields { get; private set; } = null!;
 
         public static void Init(ConfigFile config)
         {
@@ -107,6 +112,16 @@ namespace VikingLib.Configuration
                 isAdminOnly: false
             );
 
+            LogDropYields = Bind(
+                config,
+                "2 - Telemetry",
+                "LogDropYields",
+                true,
+                "If true, logs extra drop yield calculations, bonus roll chances, and roll outcomes to the BepInEx console when items are dropped or gathered with an active yield multiplier.",
+                order: 84,
+                isAdminOnly: false
+            );
+
             DefaultPlayerCritChance = Bind(
                 config,
                 "3 - Combat Defaults",
@@ -133,8 +148,8 @@ namespace VikingLib.Configuration
                 config,
                 "3 - Combat Defaults",
                 "CleaveScalingMode",
-                CleaveScalingMode.Continuous,
-                "Multi-target damage scaling formula. Continuous = 1 / (Cleave + (1 - Cleave) * N). Geometric = Target 0 takes 100%, Target 1 takes Cleave, Target 2 takes Cleave^2 in blade sweep order. Vanilla = legacy 4 / (3 * N).",
+                CleaveScalingMode.Geometric,
+                "Multi-target damage scaling formula. Geometric = Target 0 takes 100%, Target 1 takes Cleave, Target 2 takes Cleave^2 in blade sweep order. Continuous = 1 / (Cleave + (1 - Cleave) * N). Vanilla = legacy 4 / (3 * N).",
                 order: 70,
                 isAdminOnly: true
             );
@@ -252,14 +267,44 @@ namespace VikingLib.Configuration
                 isAdminOnly: false
             );
 
+            EnemyPhysicalInflictsStagger = Bind(
+                config,
+                "5 - Stagger & Physical Triad",
+                "EnemyPhysicalInflictsStagger",
+                true,
+                "If true, non-player enemies inflict poise/stagger damage with all physical damage types (Blunt, Slash, Pierce), and do not gain bonus pierce precision or inflict bleed on hit.",
+                order: 58,
+                isAdminOnly: true
+            );
+
+            EnablePiercePrecision = Bind(
+                config,
+                "5 - Stagger & Physical Triad",
+                "EnablePiercePrecision",
+                true,
+                "If true, player melee pierce attacks gain the Pierce Precision multiplier (+25% damage) and do not inflict stagger. If false, player pierce attacks deal normal damage and inflict stagger damage.",
+                order: 57,
+                isAdminOnly: true
+            );
+
             PiercePrecisionMultiplier = Bind(
                 config,
                 "5 - Stagger & Physical Triad",
                 "PiercePrecisionMultiplier",
-                1.18f,
-                "Innate Tier 3 damage multiplier applied across all piercing damage hits (1.18 = +18%).",
+                1.25f,
+                "Innate Tier 3 damage multiplier applied across melee piercing damage hits (1.25 = +25%). Ranged attacks (Bows/Crossbows) are excluded.",
                 order: 56,
                 acceptableValues: new AcceptableValueRange<float>(1.0f, 3.0f),
+                isAdminOnly: true
+            );
+
+            EnableSlashBleed = Bind(
+                config,
+                "5 - Stagger & Physical Triad",
+                "EnableSlashBleed",
+                true,
+                "If true, player slash attacks apply post-mitigation bleed slices and do not inflict stagger. If false, player slash attacks do not bleed and inflict stagger damage.",
+                order: 55,
                 isAdminOnly: true
             );
 
@@ -267,8 +312,8 @@ namespace VikingLib.Configuration
                 config,
                 "5 - Stagger & Physical Triad",
                 "SlashBleedPercent",
-                0.25f,
-                "Base percentage of post-mitigation slash damage applied as a 10-second bleeding slice (0.25 = 25%).",
+                0.35f,
+                "Base percentage of post-mitigation slash damage applied as a 10-second bleeding slice (0.35 = 35%).",
                 order: 54,
                 acceptableValues: new AcceptableValueRange<float>(0.0f, 2.0f),
                 isAdminOnly: true
@@ -278,10 +323,10 @@ namespace VikingLib.Configuration
                 config,
                 "5 - Stagger & Physical Triad",
                 "StaggerLingerSeconds",
-                3.0f,
+                8.0f,
                 "Duration in seconds before accumulated poise begins decaying after the last blunt hit.",
                 order: 52,
-                acceptableValues: new AcceptableValueRange<float>(0.5f, 10.0f),
+                acceptableValues: new AcceptableValueRange<float>(0.5f, 30.0f),
                 isAdminOnly: true
             );
 
@@ -315,6 +360,17 @@ namespace VikingLib.Configuration
                 "Global scaling factor applied to all creature poise thresholds (0.5 = 50% threshold / easier stagger; 2.0 = 200% threshold / harder stagger).",
                 order: 46,
                 acceptableValues: new AcceptableValueRange<float>(0.1f, 5.0f),
+                isAdminOnly: true
+            );
+
+            StaggerDurationSeconds = Bind(
+                config,
+                "5 - Stagger & Physical Triad",
+                "StaggerDurationSeconds",
+                5.0f,
+                "Uniform duration in seconds that a staggered creature or player remains stunned / immobilized.",
+                order: 45,
+                acceptableValues: new AcceptableValueRange<float>(1.0f, 15.0f),
                 isAdminOnly: true
             );
         }

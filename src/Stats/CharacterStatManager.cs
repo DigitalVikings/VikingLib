@@ -840,7 +840,7 @@ namespace VikingLib.Stats
         /// E.g., 1.20x grants 1 guaranteed + 20% chance for an extra drop; 2.50x grants 2 guaranteed + 50% for 3rd.
         /// </para>
         /// </summary>
-        public static int ResolveDropCount(float yieldMultiplier, ItemDrop.ItemData? itemData, int baseCount = 1)
+        public static int ResolveDropCount(float yieldMultiplier, ItemDrop.ItemData? itemData, int baseCount = 1, string? source = null, string? itemNameFallback = null)
         {
             if (baseCount <= 0) return 0;
             if (!CanScaleDrop(itemData)) return baseCount;
@@ -849,8 +849,26 @@ namespace VikingLib.Stats
             int guaranteed = Mathf.FloorToInt(totalBudget);
             float remainder = totalBudget - guaranteed;
 
-            int extra = (remainder > 0.0001f && UnityEngine.Random.value < remainder) ? 1 : 0;
-            return guaranteed + extra;
+            float roll = UnityEngine.Random.value;
+            bool bonusWon = remainder > 0.0001f && roll < remainder;
+            int extra = bonusWon ? 1 : 0;
+            int finalCount = guaranteed + extra;
+
+            if (ModConfig.LogDropYields != null && ModConfig.LogDropYields.Value && Mathf.Abs(yieldMultiplier - 1.0f) > 0.001f)
+            {
+                string rawName = !string.IsNullOrEmpty(itemData?.m_shared?.m_name)
+                    ? itemData!.m_shared.m_name
+                    : (!string.IsNullOrEmpty(itemNameFallback) ? itemNameFallback! : "Item");
+                string displayName = Localization.instance != null ? Localization.instance.Localize(rawName) : rawName;
+                string srcTag = !string.IsNullOrEmpty(source) ? $"[{source}] " : "";
+                string rollStr = remainder > 0.0001f
+                    ? $" | Roll: {roll:F2} vs {remainder:P0} -> {(bonusWon ? "SUCCESS (+1)" : "MISSED")}"
+                    : "";
+
+                VikingLibPlugin.Log.LogInfo($"[VikingLib Yield] {srcTag}{displayName} x{baseCount} -> x{finalCount} (Yield: {yieldMultiplier:F2}x, {guaranteed} guaranteed{rollStr})");
+            }
+
+            return finalCount;
         }
 
         /// <summary>

@@ -149,11 +149,34 @@ namespace VikingLib.Patches
                 return false;
             }
 
+            Character? attacker = hit?.GetAttacker();
             float poiseAmount;
             if (hit != null)
             {
-                // In VikingLib overhaul: only blunt damage inflicts poise/stagger buildup
-                poiseAmount = hit.m_damage.m_blunt * hit.m_staggerMultiplier;
+                bool isEnemyAttacker = attacker == null || !attacker.IsPlayer();
+
+                if (isEnemyAttacker && ModConfig.EnemyPhysicalInflictsStagger.Value)
+                {
+                    // Non-player enemies inflict poise damage with all physical damage types (Blunt, Slash, Pierce)
+                    poiseAmount = hit.m_damage.GetTotalPhysicalDamage() * hit.m_staggerMultiplier;
+                }
+                else
+                {
+                    // Player attacks: blunt always inflicts poise; slash/pierce inflict poise only if their respective triad perk is disabled
+                    float amount = hit.m_damage.m_blunt;
+
+                    if (!ModConfig.EnableSlashBleed.Value)
+                    {
+                        amount += hit.m_damage.m_slash;
+                    }
+
+                    if (!ModConfig.EnablePiercePrecision.Value)
+                    {
+                        amount += hit.m_damage.m_pierce;
+                    }
+
+                    poiseAmount = amount * hit.m_staggerMultiplier;
+                }
             }
             else
             {
@@ -167,7 +190,6 @@ namespace VikingLib.Patches
                 return false;
             }
 
-            Character? attacker = hit?.GetAttacker();
             bool brokePoise = Combat.Stagger.StaggerManager.AddPoiseDamage(__instance, poiseAmount, forceDirection, attacker);
 
             if (brokePoise)
@@ -246,9 +268,9 @@ namespace VikingLib.Patches
     }
 
     /// <summary>
-    /// Hooks Character.IsStaggering to report true while undergoing an Artificial Stun
-    /// (for bosses/mobs lacking native stagger animation clips), universally locking out
-    /// movement, attacks, dodging, and jumps across the entire game engine.
+    /// Hooks Character.IsStaggering to report true while undergoing a stagger or artificial stun
+    /// under VikingLib's uniform configurable duration, universally locking out movement, attacks,
+    /// dodging, and jumps across the entire game engine.
     /// </summary>
     [HarmonyPatch(typeof(Character), nameof(Character.IsStaggering))]
     public static class CharacterIsStaggeringPatch
@@ -259,7 +281,7 @@ namespace VikingLib.Patches
             if (__result || __instance == null) return;
 
             if (ModConfig.ModEnabled.Value && ModConfig.StaggerOverhaulEnabled.Value &&
-                Combat.Stagger.StaggerManager.IsArtificiallyStunned(__instance))
+                Combat.Stagger.StaggerManager.IsStaggering(__instance))
             {
                 __result = true;
             }
@@ -267,7 +289,7 @@ namespace VikingLib.Patches
     }
 
     /// <summary>
-    /// Pauses monster AI updates while artificially stunned.
+    /// Pauses monster AI updates while staggered or artificially stunned.
     /// </summary>
     [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.UpdateAI))]
     public static class BaseAIUpdateAIPatch
@@ -279,7 +301,7 @@ namespace VikingLib.Patches
                 return true;
 
             var character = Stats.CharacterStatsHelper.GetCharacter(__instance);
-            if (character != null && Combat.Stagger.StaggerManager.IsArtificiallyStunned(character))
+            if (character != null && (Combat.Stagger.StaggerManager.IsStaggering(character) || character.IsStaggering()))
             {
                 __instance.StopMoving();
                 return false;

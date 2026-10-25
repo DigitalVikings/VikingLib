@@ -833,10 +833,111 @@ namespace VikingLib.Patches
                 var itemDrop = entry.Key.GetComponent<ItemDrop>();
                 if (itemDrop?.m_itemData != null && CharacterStatManager.CanScaleDrop(itemDrop.m_itemData))
                 {
-                    int scaled = CharacterStatManager.ResolveDropCount(yield, itemDrop.m_itemData, entry.Value);
+                    int scaled = CharacterStatManager.ResolveDropCount(yield, itemDrop.m_itemData, entry.Value, "Monster Slay", entry.Key.name);
                     __result[i] = new KeyValuePair<GameObject, int>(entry.Key, scaled);
                 }
             }
+        }
+
+        // --- 11. Gathering, Cooking & Crafting Yield Telemetry ---
+
+        private static readonly AccessTools.FieldRef<Pickable, bool> s_pickablePickedRef =
+            AccessTools.FieldRefAccess<Pickable, bool>("m_picked");
+        private static readonly AccessTools.FieldRef<InventoryGui, Recipe> s_craftRecipeRef =
+            AccessTools.FieldRefAccess<InventoryGui, Recipe>("m_craftRecipe");
+        private static readonly AccessTools.FieldRef<InventoryGui, bool> s_multiCraftingRef =
+            AccessTools.FieldRefAccess<InventoryGui, bool>("m_multiCrafting");
+
+        [HarmonyPatch(typeof(Pickable), "RPC_Pick")]
+        [HarmonyPrefix]
+        public static void PrefixPickableRPC_Pick(Pickable __instance, long sender, int bonus)
+        {
+            if (!ModConfig.ModEnabled.Value || ModConfig.LogDropYields == null || !ModConfig.LogDropYields.Value) return;
+            if (__instance == null) return;
+            var nview = __instance.GetComponent<ZNetView>();
+            if (nview == null || !nview.IsValid() || !nview.IsOwner() || s_pickablePickedRef(__instance)) return;
+            var player = Player.m_localPlayer;
+            if (player == null) return;
+
+            float yield = CharacterStatManager.GetStat(player, CharacterStatType.ForagingYield);
+            if (Mathf.Abs(yield - 1.0f) <= 0.001f) return;
+
+            string rawName = __instance.m_itemPrefab != null ? __instance.m_itemPrefab.name : "Pickable";
+            var drop = __instance.m_itemPrefab?.GetComponent<ItemDrop>();
+            if (drop?.m_itemData?.m_shared?.m_name != null)
+            {
+                rawName = drop.m_itemData.m_shared.m_name;
+            }
+            string name = Localization.instance != null ? Localization.instance.Localize(rawName) : rawName;
+            float chance = yield - 1.0f;
+            string outcome = bonus > 0 ? $"SUCCESS (+{bonus})" : "MISSED";
+
+            VikingLibPlugin.Log.LogInfo($"[VikingLib Yield] [Foraging] {name} (Yield: {yield:F2}x, Bonus Chance: {chance:P0} -> {outcome})");
+        }
+
+        [HarmonyPatch(typeof(CookingStation), "RPC_RemoveDoneItem")]
+        [HarmonyPrefix]
+        public static void PrefixCookingStationRPC_RemoveDoneItem(CookingStation __instance, long sender, Vector3 userPos, int count)
+        {
+            if (!ModConfig.ModEnabled.Value || ModConfig.LogDropYields == null || !ModConfig.LogDropYields.Value) return;
+            if (__instance == null) return;
+            var nview = __instance.GetComponent<ZNetView>();
+            if (nview == null || !nview.IsValid() || !nview.IsOwner()) return;
+            var player = Player.m_localPlayer;
+            if (player == null) return;
+
+            float yield = CharacterStatManager.GetStat(player, CharacterStatType.CookingYield);
+            if (Mathf.Abs(yield - 1.0f) <= 0.001f) return;
+
+            float chance = yield - 1.0f;
+            string outcome = count > 1 ? $"SUCCESS (+{count - 1})" : "MISSED";
+            string stationName = Localization.instance != null ? Localization.instance.Localize(__instance.gameObject.name.Replace("(Clone)", "")) : __instance.gameObject.name;
+
+            VikingLibPlugin.Log.LogInfo($"[VikingLib Yield] [Cooking] {stationName} (Yield: {yield:F2}x, Bonus Chance: {chance:P0} -> {outcome})");
+        }
+
+        [HarmonyPatch(typeof(InventoryGui), "DoCrafting")]
+        [HarmonyPrefix]
+        public static void PrefixDoCrafting(InventoryGui __instance, Player player, out (string Name, int PreCount, float Yield)? __state)
+        {
+            __state = null;
+            if (!ModConfig.ModEnabled.Value || ModConfig.LogDropYields == null || !ModConfig.LogDropYields.Value) return;
+            if (__instance == null || player == null) return;
+
+            float yield = CharacterStatManager.GetStat(player, CharacterStatType.CraftingYield);
+            if (Mathf.Abs(yield - 1.0f) <= 0.001f) return;
+
+            var recipe = s_craftRecipeRef(__instance);
+            if (recipe == null || recipe.m_item == null || recipe.m_item.m_itemData?.m_shared == null) return;
+            if (recipe.m_item.m_itemData.m_shared.m_maxStackSize <= 1) return;
+
+            string itemName = recipe.m_item.m_itemData.m_shared.m_name;
+            int preCount = player.GetInventory()?.CountItems(itemName) ?? 0;
+            __state = (itemName, preCount, yield);
+        }
+
+        [HarmonyPatch(typeof(InventoryGui), "DoCrafting")]
+        [HarmonyPostfix]
+        public static void PostfixDoCrafting(InventoryGui __instance, Player player, (string Name, int PreCount, float Yield)? __state)
+        {
+            if (__state == null || player == null) return;
+            var (rawName, preCount, yield) = __state.Value;
+            int postCount = player.GetInventory()?.CountItems(rawName) ?? 0;
+            int crafted = postCount - preCount;
+            if (crafted <= 0) return;
+
+            bool isMulti = s_multiCraftingRef(__instance);
+            int multi = !isMulti ? 1 : __instance.m_multiCraftAmount;
+            var recipe = s_craftRecipeRef(__instance);
+            int numPerCraft = recipe?.m_amount ?? 1;
+            int expected = multi * numPerCraft;
+            int bonus = crafted - expected;
+
+            string displayName = Localization.instance != null ? Localization.instance.Localize(rawName) : rawName;
+            float chance = yield - 1.0f;
+            string outcome = bonus > 0 ? $"SUCCESS (+{bonus})" : "MISSED";
+
+            VikingLibPlugin.Log.LogInfo($"[VikingLib Yield] [Crafting] {displayName} x{expected} -> x{crafted} (Yield: {yield:F2}x, Bonus Chance: {chance:P0} -> {outcome})");
         }
     }
 }

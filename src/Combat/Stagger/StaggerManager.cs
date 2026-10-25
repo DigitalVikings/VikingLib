@@ -16,7 +16,7 @@ namespace VikingLib.Combat.Stagger
         {
             public float CurrentPoise;
             public float LastBluntHitTime = -100f;
-            public float StunTimer;
+            public float StaggerTimer;
             public bool IsArtificialStun;
         }
 
@@ -53,7 +53,7 @@ namespace VikingLib.Combat.Stagger
             var state = _states.GetOrCreateValue(target);
 
             // Cannot build poise while already staggering or artificially stunned
-            if (target.IsStaggering() || state.IsArtificialStun)
+            if (target.IsStaggering() || state.StaggerTimer > 0f)
             {
                 return false;
             }
@@ -78,7 +78,7 @@ namespace VikingLib.Combat.Stagger
         }
 
         /// <summary>
-        /// Frame update for poise decay and artificial stun timer countdown.
+        /// Frame update for poise decay and stagger / artificial stun timer countdown.
         /// Replaces vanilla Character.UpdateStagger.
         /// </summary>
         public static void Update(Character character, float dt)
@@ -87,20 +87,24 @@ namespace VikingLib.Combat.Stagger
 
             if (!_states.TryGetValue(character, out var state)) return;
 
-            // 1. Artificial Stun Countdown (for bosses/mobs lacking native stagger animations)
-            if (state.IsArtificialStun)
+            // 1. Stagger Timer Countdown (Uniform duration across native clips and artificial stuns)
+            if (state.StaggerTimer > 0f)
             {
-                state.StunTimer -= dt;
-                if (state.StunTimer <= 0f)
+                state.StaggerTimer -= dt;
+                if (state.StaggerTimer <= 0f)
                 {
-                    state.IsArtificialStun = false;
-                    state.StunTimer = 0f;
+                    state.StaggerTimer = 0f;
 
-                    // Restore animator playback
-                    var zanim = CharacterStatsHelper.GetZAnim(character);
-                    if (zanim != null)
+                    if (state.IsArtificialStun)
                     {
-                        zanim.SetSpeed(1f);
+                        state.IsArtificialStun = false;
+
+                        // Restore animator playback
+                        var zanim = CharacterStatsHelper.GetZAnim(character);
+                        if (zanim != null)
+                        {
+                            zanim.SetSpeed(1f);
+                        }
                     }
                 }
                 return;
@@ -141,9 +145,9 @@ namespace VikingLib.Combat.Stagger
                     }
                 }
             }
-            else if (!state.IsArtificialStun)
+            else if (state.StaggerTimer <= 0f)
             {
-                // No active poise or stun: evict immediately
+                // No active poise or stagger: evict immediately
                 SyncPoiseToZDO(character, 0f);
                 _states.Remove(character);
             }
@@ -191,13 +195,25 @@ namespace VikingLib.Combat.Stagger
         }
 
         /// <summary>
+        /// Returns true if the character is currently undergoing a stagger or artificial stun.
+        /// </summary>
+        public static bool IsStaggering(Character character)
+        {
+            if (character != null && _states.TryGetValue(character, out var state))
+            {
+                return state.StaggerTimer > 0f;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Returns true if the character is currently undergoing an artificial stun (AI paused, animator speed frozen).
         /// </summary>
         public static bool IsArtificiallyStunned(Character character)
         {
             if (character != null && _states.TryGetValue(character, out var state))
             {
-                return state.IsArtificialStun;
+                return state.IsArtificialStun && state.StaggerTimer > 0f;
             }
             return false;
         }
@@ -226,6 +242,10 @@ namespace VikingLib.Combat.Stagger
         private static void TriggerStagger(Character target, Vector3 forceDir, Character? attacker)
         {
             var profile = CreatureStaggerTable.GetProfile(target);
+            var state = _states.GetOrCreateValue(target);
+
+            float baseDuration = Configuration.ModConfig.StaggerDurationSeconds?.Value ?? 5.0f;
+            state.StaggerTimer = baseDuration * profile.DurationMultiplier;
 
             // Flash player HUD stagger bar if the target was a player
             if (target.IsPlayer())
@@ -254,23 +274,16 @@ namespace VikingLib.Combat.Stagger
                 }
             }
 
-            if (profile.HasNativeAnimation)
+            bool hasNative = profile.HasNativeAnimation && !target.IsBoss();
+            if (hasNative)
             {
                 // Native Unity Animator stagger clip
                 target.Stagger(forceDir);
-
-                var zanim = CharacterStatsHelper.GetZAnim(target);
-                if (Mathf.Abs(profile.DurationMultiplier - 1.0f) > 0.01f && zanim != null)
-                {
-                    zanim.SetSpeed(1.0f / profile.DurationMultiplier);
-                }
             }
             else
             {
-                // Artificial Stun: For bosses and golems lacking native stagger animations (Elder, Bonemass, Moder)
-                var state = _states.GetOrCreateValue(target);
+                // Artificial Stun: For bosses and golems lacking native stagger animations (Eikthyr, Elder, Bonemass, Moder, etc.)
                 state.IsArtificialStun = true;
-                state.StunTimer = 2.5f * profile.DurationMultiplier;
 
                 // Stop AI locomotion and attacks
                 var baseAI = target.GetBaseAI();
@@ -291,6 +304,13 @@ namespace VikingLib.Combat.Stagger
                 {
                     target.m_critHitEffects.Create(target.GetCenterPoint(), Quaternion.identity, target.transform, 1f, -1);
                 }
+
+                // Emit floating STAGGERED text above target head
+                DamageText.instance?.ShowText(
+                    DamageText.TextType.Bonus,
+                    target.GetTopPoint() + Vector3.up * 0.5f,
+                    "STAGGERED"
+                );
             }
         }
     }

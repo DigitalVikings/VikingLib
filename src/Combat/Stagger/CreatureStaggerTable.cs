@@ -149,15 +149,15 @@ namespace VikingLib.Combat.Stagger
         private static void InitDefaults()
         {
             // =========================================================================
-            // 1. BOSSES (Smoothed sub-linear curve ~7 * sqrt(HP); native animation flags)
+            // 1. BOSSES (Smoothed sub-linear curve ~7 * sqrt(HP); artificial stun)
             // =========================================================================
-            Register("Eikthyr", 120f, 1.0f, hasNativeAnimation: true);       // 500 HP
+            Register("Eikthyr", 120f, 1.0f, hasNativeAnimation: false);      // 500 HP (Artificial Stun)
             Register("gd_king", 350f, 1.0f, hasNativeAnimation: false);     // The Elder: 2500 HP (Artificial Stun)
             Register("Bonemass", 500f, 1.0f, hasNativeAnimation: false);   // 5000 HP (Artificial Stun)
             Register("Dragon", 600f, 1.0f, hasNativeAnimation: false);     // Moder: 7500 HP (Artificial Stun)
-            Register("GoblinKing", 700f, 1.0f, hasNativeAnimation: true);  // Yagluth: 10000 HP
-            Register("SeekerQueen", 800f, 1.0f, hasNativeAnimation: true); // The Queen: 12500 HP
-            Register("Fader", 900f, 1.0f, hasNativeAnimation: true);       // 15000 HP
+            Register("GoblinKing", 700f, 1.0f, hasNativeAnimation: false);  // Yagluth: 10000 HP (Artificial Stun)
+            Register("SeekerQueen", 800f, 1.0f, hasNativeAnimation: false); // The Queen: 12500 HP (Artificial Stun)
+            Register("Fader", 900f, 1.0f, hasNativeAnimation: false);       // 15000 HP (Artificial Stun)
 
             // =========================================================================
             // 2. REGULAR MOBS & ELITES (Smoothed sub-linear curve ~4.5 * sqrt(HP))
