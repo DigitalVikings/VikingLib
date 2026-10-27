@@ -63,7 +63,13 @@ namespace VikingLib.UI
             if (!EnsureReflected()) return;
 
             if (_bars.TryGetValue(c, out var existingBar) && existingBar != null)
+            {
+                existingBar.SetMaxValue(1f);
+                existingBar.m_smoothDrain = false;
+                existingBar.m_smoothFill = false;
+                existingBar.m_changeDelay = 0f;
                 return;
+            }
 
             try
             {
@@ -91,6 +97,10 @@ namespace VikingLib.UI
                 var staggerBar = staggerObj.GetComponent<GuiBar>();
                 if (staggerBar != null)
                 {
+                    staggerBar.SetMaxValue(1f);
+                    staggerBar.m_smoothDrain = false;
+                    staggerBar.m_smoothFill = false;
+                    staggerBar.m_changeDelay = 0f;
                     staggerBar.SetColor(AmberColor);
                     staggerBar.SetValue(0f);
                     staggerObj.SetActive(false);
@@ -149,7 +159,10 @@ namespace VikingLib.UI
                         // Flashing feedback during active stagger / stun
                         float pulse = Mathf.PingPong(Time.time * 6f, 1f);
                         bar.SetColor(Color.Lerp(AmberColor, Color.white, pulse));
-                        bar.SetValue(1f);
+
+                        // Drains smoothly towards 0 while creature is staggered to show remaining duration
+                        float staggerFraction = StaggerManager.GetStaggerFraction(character);
+                        bar.SetValue(staggerFraction);
 
                         // Highlight nameplate if target is a boss
                         if (character.IsBoss() && _mHudsField != null)

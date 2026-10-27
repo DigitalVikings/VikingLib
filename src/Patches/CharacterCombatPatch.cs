@@ -192,12 +192,40 @@ namespace VikingLib.Patches
 
             bool brokePoise = Combat.Stagger.StaggerManager.AddPoiseDamage(__instance, poiseAmount, forceDirection, attacker);
 
-            if (brokePoise)
+            var ctx = DamagePipeline.CurrentContext;
+            if (ctx != null)
             {
-                var ctx = DamagePipeline.CurrentContext;
-                if (ctx != null && ctx.Target == __instance)
+                float threshold = Combat.Stagger.StaggerManager.GetEffectiveThreshold(__instance);
+                string targetName = __instance.GetHoverName();
+
+                if (hit != null && ctx.Target == __instance)
                 {
-                    ctx.CausedStagger = true;
+                    if (brokePoise)
+                    {
+                        ctx.CausedStagger = true;
+                        ctx.Trace?.RecordStep(DamagePhase.PostHitProcs, "Poise Damage",
+                            $"Inflicted {poiseAmount:F1} Poise damage -> STAGGERED ({targetName} poise broken: {threshold:F1}/{threshold:F1})", poiseAmount);
+                    }
+                    else
+                    {
+                        float currentPoise = Combat.Stagger.StaggerManager.GetCurrentPoise(__instance);
+                        ctx.Trace?.RecordStep(DamagePhase.PostHitProcs, "Poise Damage",
+                            $"Inflicted {poiseAmount:F1} Poise damage ({currentPoise:F1}/{threshold:F1} [{(currentPoise / threshold):P0}])", poiseAmount);
+                    }
+                }
+                else if (hit == null)
+                {
+                    if (brokePoise)
+                    {
+                        ctx.Trace?.RecordStep(DamagePhase.TargetDefenses, "Guard Broken",
+                            $"Block overwhelmed by {poiseAmount:F1} Poise damage -> STAGGERED ({targetName} poise broken: {threshold:F1}/{threshold:F1})", poiseAmount);
+                    }
+                    else
+                    {
+                        float currentPoise = Combat.Stagger.StaggerManager.GetCurrentPoise(__instance);
+                        ctx.Trace?.RecordStep(DamagePhase.TargetDefenses, "Block Poise Absorbed",
+                            $"Absorbed {poiseAmount:F1} Block Poise damage ({currentPoise:F1}/{threshold:F1} [{(currentPoise / threshold):P0}])", poiseAmount);
+                    }
                 }
             }
 
@@ -289,6 +317,87 @@ namespace VikingLib.Patches
     }
 
     /// <summary>
+    /// Guarantees that native stagger animations always trigger their animator clip
+    /// and face the proper deflection direction without being suppressed by extended stagger timers.
+    /// </summary>
+    [HarmonyPatch(typeof(Character), "RPC_Stagger")]
+    public static class CharacterRPC_StaggerPatch
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(Character __instance, long sender, Vector3 forceDirection)
+        {
+            if (!ModConfig.ModEnabled.Value || !ModConfig.StaggerOverhaulEnabled.Value || __instance == null)
+                return true;
+
+            if (forceDirection.magnitude > 0.01f)
+            {
+                forceDirection.y = 0f;
+                if (forceDirection.sqrMagnitude > 0.0001f)
+                {
+                    __instance.transform.rotation = Quaternion.LookRotation(-forceDirection);
+                }
+            }
+
+            var zanim = Stats.CharacterStatsHelper.GetZAnim(__instance);
+            if (zanim != null)
+            {
+                zanim.SetSpeed(1f);
+                zanim.SetTrigger("stagger");
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Resets poise and restores animator playback speed when a character dies.
+    /// </summary>
+    [HarmonyPatch(typeof(Character), "OnDeath")]
+    public static class CharacterOnDeathPatch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(Character __instance)
+        {
+            if (__instance != null)
+            {
+                Combat.Stagger.StaggerManager.Reset(__instance);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resets poise and restores animator playback speed when a player dies (Player overrides Character.OnDeath).
+    /// </summary>
+    [HarmonyPatch(typeof(Player), "OnDeath")]
+    public static class PlayerOnDeathPatch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(Player __instance)
+        {
+            if (__instance != null)
+            {
+                Combat.Stagger.StaggerManager.Reset(__instance);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resets poise and cleans up state when a character is destroyed or despawns.
+    /// </summary>
+    [HarmonyPatch(typeof(Character), "OnDestroy")]
+    public static class CharacterOnDestroyPatch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(Character __instance)
+        {
+            if (__instance != null)
+            {
+                Combat.Stagger.StaggerManager.Reset(__instance);
+            }
+        }
+    }
+
+    /// <summary>
     /// Pauses monster AI updates while staggered or artificially stunned.
     /// </summary>
     [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.UpdateAI))]
@@ -343,8 +452,30 @@ namespace VikingLib.Patches
             float parryPoiseDamage = blockPower * parryMult * statMult;
 
             Vector3 forceDir = -hit.m_dir;
-            Combat.Stagger.StaggerManager.AddPoiseDamage(attacker, parryPoiseDamage, forceDir, defender);
+            bool broke = Combat.Stagger.StaggerManager.AddPoiseDamage(attacker, parryPoiseDamage, forceDir, defender);
             DamagePipeline.RaiseParry(defender, attacker, hit);
+
+            var ctx = DamagePipeline.CurrentContext;
+            if (ctx != null && ctx.Trace != null)
+            {
+                float threshold = Combat.Stagger.StaggerManager.GetEffectiveThreshold(attacker);
+                string attackerName = attacker.GetHoverName();
+                string blockerName = blocker?.m_shared?.m_name != null
+                    ? (Localization.instance != null ? Localization.instance.Localize(blocker.m_shared.m_name) : blocker.m_shared.m_name)
+                    : "Shield";
+
+                if (broke)
+                {
+                    ctx.Trace.RecordStep(DamagePhase.TargetDefenses, "Parry Poise Counter",
+                        $"Inflicted {parryPoiseDamage:F1} Parry Poise via {blockerName} -> STAGGERED ({attackerName} poise broken: {threshold:F1}/{threshold:F1})", parryPoiseDamage);
+                }
+                else
+                {
+                    float currentPoise = Combat.Stagger.StaggerManager.GetCurrentPoise(attacker);
+                    ctx.Trace.RecordStep(DamagePhase.TargetDefenses, "Parry Poise Counter",
+                        $"Inflicted {parryPoiseDamage:F1} Parry Poise via {blockerName} ({currentPoise:F1}/{threshold:F1} [{(currentPoise / threshold):P0}])", parryPoiseDamage);
+                }
+            }
         }
 
         [HarmonyTranspiler]

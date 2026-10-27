@@ -17,10 +17,14 @@ namespace VikingLib.Combat.Stagger
             public float CurrentPoise;
             public float LastBluntHitTime = -100f;
             public float StaggerTimer;
+            public float InitialStaggerDuration = 5.0f;
             public bool IsArtificialStun;
         }
 
+        private static readonly int s_animatorTagStagger = ZSyncAnimation.GetHash("stagger");
         private static readonly int ZDO_PoiseRatio = "VL_PoiseRatio".GetStableHashCode();
+        private static readonly int ZDO_StaggerDuration = "VL_StaggerDuration".GetStableHashCode();
+        private static readonly int ZDO_StaggerEndTime = "VL_StaggerEndTime".GetStableHashCode();
 
         // ConditionalWeakTable automatically cleans up states when Character GameObjects are destroyed
         private static readonly ConditionalWeakTable<Character, PoiseState> _states = new();
@@ -37,6 +41,30 @@ namespace VikingLib.Combat.Stagger
                     if (Mathf.Abs(current - ratio) > 0.005f || (ratio == 0f && current != 0f))
                     {
                         zdo.Set(ZDO_PoiseRatio, ratio);
+                    }
+                }
+            }
+        }
+
+        private static void SyncStaggerTimerToZDO(Character character, float duration)
+        {
+            var nview = CharacterStatsHelper.GetNView(character);
+            if (nview != null && nview.IsValid() && nview.IsOwner())
+            {
+                var zdo = nview.GetZDO();
+                if (zdo != null)
+                {
+                    if (duration > 0f)
+                    {
+                        double now = ZNet.instance != null ? ZNet.instance.GetTimeSeconds() : (double)Time.time;
+                        long endMs = (long)((now + duration) * 1000.0);
+                        zdo.Set(ZDO_StaggerDuration, duration);
+                        zdo.Set(ZDO_StaggerEndTime, endMs);
+                    }
+                    else
+                    {
+                        zdo.Set(ZDO_StaggerDuration, 0f);
+                        zdo.Set(ZDO_StaggerEndTime, 0L);
                     }
                 }
             }
@@ -94,18 +122,22 @@ namespace VikingLib.Combat.Stagger
                 if (state.StaggerTimer <= 0f)
                 {
                     state.StaggerTimer = 0f;
+                    SyncStaggerTimerToZDO(character, 0f);
+
+                    var zanim = CharacterStatsHelper.GetZAnim(character);
+                    zanim?.SetSpeed(1f);
 
                     if (state.IsArtificialStun)
                     {
                         state.IsArtificialStun = false;
-
-                        // Restore animator playback
-                        var zanim = CharacterStatsHelper.GetZAnim(character);
-                        if (zanim != null)
-                        {
-                            zanim.SetSpeed(1f);
-                        }
                     }
+                    return;
+                }
+
+                // Smooth dynamic speed curve for native stagger animations
+                if (!state.IsArtificialStun)
+                {
+                    UpdateNativeStaggerAnimation(character, state);
                 }
                 return;
             }
@@ -199,11 +231,71 @@ namespace VikingLib.Combat.Stagger
         /// </summary>
         public static bool IsStaggering(Character character)
         {
-            if (character != null && _states.TryGetValue(character, out var state))
+            if (character == null) return false;
+
+            if (_states.TryGetValue(character, out var state))
             {
                 return state.StaggerTimer > 0f;
             }
+
+            // Remote client fallback: query owner-authoritative ZDO end timestamp
+            var nview = CharacterStatsHelper.GetNView(character);
+            if (nview != null && nview.IsValid())
+            {
+                var zdo = nview.GetZDO();
+                if (zdo != null)
+                {
+                    long endMs = zdo.GetLong(ZDO_StaggerEndTime, 0L);
+                    if (endMs > 0L)
+                    {
+                        double now = ZNet.instance != null ? ZNet.instance.GetTimeSeconds() : (double)Time.time;
+                        return (endMs / 1000.0) > now;
+                    }
+                }
+            }
+
             return false;
+        }
+
+        /// <summary>
+        /// Returns the remaining stagger duration fraction [0.0, 1.0] while a character is staggered.
+        /// Returns 0.0 if the character is not currently staggered.
+        /// </summary>
+        public static float GetStaggerFraction(Character character)
+        {
+            if (character == null) return 0f;
+
+            if (_states.TryGetValue(character, out var state))
+            {
+                if (state.StaggerTimer > 0f && state.InitialStaggerDuration > 0.001f)
+                {
+                    return Mathf.Clamp01(state.StaggerTimer / state.InitialStaggerDuration);
+                }
+                return 0f;
+            }
+
+            // Remote client fallback: query owner-authoritative ZDO end timestamp
+            var nview = CharacterStatsHelper.GetNView(character);
+            if (nview != null && nview.IsValid())
+            {
+                var zdo = nview.GetZDO();
+                if (zdo != null)
+                {
+                    float duration = zdo.GetFloat(ZDO_StaggerDuration, 0f);
+                    long endMs = zdo.GetLong(ZDO_StaggerEndTime, 0L);
+                    if (duration > 0.001f && endMs > 0L)
+                    {
+                        double now = ZNet.instance != null ? ZNet.instance.GetTimeSeconds() : (double)Time.time;
+                        double remaining = (endMs / 1000.0) - now;
+                        if (remaining > 0.0)
+                        {
+                            return Mathf.Clamp01((float)(remaining / duration));
+                        }
+                    }
+                }
+            }
+
+            return 0f;
         }
 
         /// <summary>
@@ -225,8 +317,14 @@ namespace VikingLib.Combat.Stagger
         {
             if (character != null)
             {
+                if (_states.TryGetValue(character, out var state))
+                {
+                    var zanim = CharacterStatsHelper.GetZAnim(character);
+                    zanim?.SetSpeed(1f);
+                }
                 _states.Remove(character);
                 SyncPoiseToZDO(character, 0f);
+                SyncStaggerTimerToZDO(character, 0f);
             }
         }
 
@@ -244,8 +342,13 @@ namespace VikingLib.Combat.Stagger
             var profile = CreatureStaggerTable.GetProfile(target);
             var state = _states.GetOrCreateValue(target);
 
+            // Set uniform stagger countdown timer calibrated by creature tier
             float baseDuration = Configuration.ModConfig.StaggerDurationSeconds?.Value ?? 5.0f;
-            state.StaggerTimer = baseDuration * profile.DurationMultiplier;
+            float totalDuration = Mathf.Max(0.1f, baseDuration * profile.DurationMultiplier);
+            state.InitialStaggerDuration = totalDuration;
+            state.StaggerTimer = totalDuration;
+
+            SyncStaggerTimerToZDO(target, totalDuration);
 
             // Flash player HUD stagger bar if the target was a player
             if (target.IsPlayer())
@@ -277,6 +380,8 @@ namespace VikingLib.Combat.Stagger
             bool hasNative = profile.HasNativeAnimation && !target.IsBoss();
             if (hasNative)
             {
+                state.IsArtificialStun = false;
+
                 // Native Unity Animator stagger clip
                 target.Stagger(forceDir);
             }
@@ -311,6 +416,36 @@ namespace VikingLib.Combat.Stagger
                     target.GetTopPoint() + Vector3.up * 0.5f,
                     "STAGGERED"
                 );
+            }
+        }
+
+        private static void UpdateNativeStaggerAnimation(Character character, PoiseState state)
+        {
+            var zanim = CharacterStatsHelper.GetZAnim(character);
+            var anim = CharacterStatsHelper.GetAnimator(character);
+            if (zanim == null || anim == null) return;
+
+            var stateInfo = anim.GetCurrentAnimatorStateInfo(0);
+            if (stateInfo.tagHash == s_animatorTagStagger)
+            {
+                float u = Mathf.Clamp01(stateInfo.normalizedTime % 1f);
+                float clipLength = stateInfo.length > 0.05f ? stateInfo.length : 1.25f;
+                float ratio = Mathf.Max(1f, state.InitialStaggerDuration / clipLength);
+
+                // Closed-form harmonic smooth dip:
+                // Starts at 1.0 at u=0, dips smoothly to 1/(2*ratio - 1) at u=0.5, returns smoothly to 1.0 at u=1.0
+                float sinVal = Mathf.Sin(Mathf.PI * u);
+                float speed = 1.0f / (1.0f + 2.0f * (ratio - 1.0f) * (sinVal * sinVal));
+
+                zanim.SetSpeed(Mathf.Clamp(speed, 0.05f, 1.0f));
+            }
+            else
+            {
+                // If animator transitioned out or is in a different state, restore full speed
+                if (anim.speed < 0.99f)
+                {
+                    zanim.SetSpeed(1f);
+                }
             }
         }
     }

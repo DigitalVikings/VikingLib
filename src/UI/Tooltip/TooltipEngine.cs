@@ -235,7 +235,7 @@ namespace VikingLib.UI.Tooltip
                             float minBleed = kvp.Value.Min * slashBleedPercent;
                             float maxBleed = kvp.Value.Max * slashBleedPercent;
                             string bleedStr = FormatRange(minBleed, maxBleed);
-                            sb.Append($"\n    <color=#B91C1C>+{bleedStr} Bleed</color>");
+                            sb.Append($"\n    <color=#B91C1C>Bleed: +{bleedStr}</color>");
                         }
                     }
                     else if (kvp.Key == DamageType.Blunt)
@@ -257,7 +257,7 @@ namespace VikingLib.UI.Tooltip
             // Expand hint
             string keyLabel = GetKeyLabel(ModConfig.TooltipExpandKey.Value);
             string actionWord = ModConfig.TooltipExpandBehavior.Value == TooltipExpandBehavior.Toggle ? "Press" : "Hold";
-            sb.Append($"\n\n<color=#888888>[{actionWord} {keyLabel}: Combat Details]</color>");
+            sb.Append($"\n\n<color=#888888>[{keyLabel}] {actionWord}: Combat Details</color>");
 
             // Custom section extensions
             var ctx = new ItemTooltipContext(item, qualityLevel, crafting, worldLevel, GetLocalPlayerSafe());
@@ -413,14 +413,14 @@ namespace VikingLib.UI.Tooltip
 
             // 1. Common Properties (Adheres strictly to primary_1)
             sb.Append("<size=85%>");
-            sb.Append("<color=#FFAA00><b>Common Properties</b></color>");
+            sb.Append("<color=#FFAA00><b>Common Properties:</b></color>");
 
             // Handedness at the top of Common Properties
             bool isTwoHanded = item.m_shared.m_itemType is ItemDrop.ItemData.ItemType.TwoHandedWeapon
                 or ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft
                 or ItemDrop.ItemData.ItemType.Bow;
             string handStr = isTwoHanded ? "$item_twohanded" : "$item_onehanded";
-            sb.Append($"\n<color=#C0C0C0>{handStr}</color>");
+            sb.Append($"\nType: <color=#C0C0C0>{handStr}</color>");
 
             float blockArmor = item.GetBlockPower(qualityLevel);
             float parryBonus = item.m_shared.m_timedBlockBonus;
@@ -472,7 +472,7 @@ namespace VikingLib.UI.Tooltip
                     string rangeStr = FormatRange(kvp.Value.Min, kvp.Value.Max);
                     string typeLabel = GetLocalizedDamageType(kvp.Key);
                     string typeColor = GetDamageTypeColor(kvp.Key);
-                    sb.Append($"\n{dmgLabel}: <color={typeColor}>{rangeStr}</color> {typeLabel}");
+                    sb.Append($"\n{dmgLabel}: <color={typeColor}>{rangeStr}</color> ({typeLabel})");
 
                     if (ModConfig.StaggerOverhaulEnabled.Value)
                     {
@@ -482,7 +482,7 @@ namespace VikingLib.UI.Tooltip
                             if (bleedPct > 0.001f)
                             {
                                 string bleedStr = FormatRange(kvp.Value.Min * bleedPct, kvp.Value.Max * bleedPct);
-                                sb.Append($"\n    <color=#B91C1C>+{bleedStr} Bleed</color>");
+                                sb.Append($"\n    <color=#B91C1C>Bleed: +{bleedStr}</color>");
                             }
                         }
                         else if (kvp.Key == DamageType.Blunt)
@@ -502,7 +502,7 @@ namespace VikingLib.UI.Tooltip
                         string rangeStr = FormatRange(kvp.Value.Min, kvp.Value.Max);
                         string typeLabel = GetLocalizedDamageType(kvp.Key);
                         string typeColor = GetDamageTypeColor(kvp.Key);
-                        sb.Append($"\n  <color={typeColor}>{rangeStr}</color> {typeLabel}");
+                        sb.Append($"\n  {typeLabel}: <color={typeColor}>{rangeStr}</color>");
 
                         if (ModConfig.StaggerOverhaulEnabled.Value)
                         {
@@ -512,7 +512,7 @@ namespace VikingLib.UI.Tooltip
                                 if (bleedPct > 0.001f)
                                 {
                                     string bleedStr = FormatRange(kvp.Value.Min * bleedPct, kvp.Value.Max * bleedPct);
-                                    sb.Append($"\n    <color=#B91C1C>+{bleedStr} Bleed</color>");
+                                    sb.Append($"\n    <color=#B91C1C>Bleed: +{bleedStr}</color>");
                                 }
                             }
                             else if (kvp.Key == DamageType.Blunt)
@@ -604,7 +604,7 @@ namespace VikingLib.UI.Tooltip
             // 2. Attack Profiles Section (Overrides only! Omitted if there is only 1 attack profile)
             if (cards.Count > 1)
             {
-                sb.Append("\n\n<color=#FFAA00><b>Attack Profiles</b></color>");
+                sb.Append("\n\n<color=#FFAA00><b>Attack Profiles:</b></color>");
 
                 foreach (var card in cards.Skip(1))
                 {
@@ -635,7 +635,7 @@ namespace VikingLib.UI.Tooltip
 
                 if (customLines.Count > 0)
                 {
-                    sb.Append("\n\n<color=#FFAA00><b>Traits & Modifiers</b></color>");
+                    sb.Append("\n\n<color=#FFAA00><b>Traits & Modifiers:</b></color>");
                     foreach (var line in customLines)
                     {
                         sb.Append($"\n{line}");
@@ -646,7 +646,7 @@ namespace VikingLib.UI.Tooltip
             // 4. Footer Hint
             string keyLabel = GetKeyLabel(ModConfig.TooltipExpandKey.Value);
             string actionWord = ModConfig.TooltipExpandBehavior.Value == TooltipExpandBehavior.Toggle ? "Press" : "Hold";
-            sb.Append($"\n\n<color=#888888>[{actionWord} {keyLabel}: Standard View]</color>");
+            sb.Append($"\n\n<color=#888888>[{keyLabel}] {actionWord}: Standard View</color>");
 
             sb.Append("</size>");
 
@@ -671,7 +671,7 @@ namespace VikingLib.UI.Tooltip
                 .ToList();
 
             // 1. Card Title
-            sb.Append($"\n\n<color=#FFD700>• {card.Title}</color>");
+            sb.Append($"\n\n<color=#FFD700>Attack: {card.Title}</color>");
 
             // 2. Damage line (if different from baseline)
             bool damageDiffers = cardCombatRanges.Count != baselineCombatRanges.Count;
@@ -699,7 +699,7 @@ namespace VikingLib.UI.Tooltip
                     string rangeStr = FormatRange(kvp.Value.Min, kvp.Value.Max);
                     string typeLabel = GetLocalizedDamageType(kvp.Key);
                     string typeColor = GetDamageTypeColor(kvp.Key);
-                    sb.Append($"\n  Damage: <color={typeColor}>{rangeStr}</color> {typeLabel}");
+                    sb.Append($"\n  Damage: <color={typeColor}>{rangeStr}</color> ({typeLabel})");
 
                     if (ModConfig.StaggerOverhaulEnabled.Value)
                     {
@@ -709,7 +709,7 @@ namespace VikingLib.UI.Tooltip
                             if (bleedPct > 0.001f)
                             {
                                 string bleedStr = FormatRange(kvp.Value.Min * bleedPct, kvp.Value.Max * bleedPct);
-                                sb.Append($"\n    <color=#B91C1C>+{bleedStr} Bleed</color>");
+                                sb.Append($"\n    <color=#B91C1C>Bleed: +{bleedStr}</color>");
                             }
                         }
                         else if (kvp.Key == DamageType.Blunt)
@@ -729,7 +729,7 @@ namespace VikingLib.UI.Tooltip
                         string rangeStr = FormatRange(kvp.Value.Min, kvp.Value.Max);
                         string typeLabel = GetLocalizedDamageType(kvp.Key);
                         string typeColor = GetDamageTypeColor(kvp.Key);
-                        sb.Append($"\n    <color={typeColor}>{rangeStr}</color> {typeLabel}");
+                        sb.Append($"\n    {typeLabel}: <color={typeColor}>{rangeStr}</color>");
 
                         if (ModConfig.StaggerOverhaulEnabled.Value)
                         {
@@ -739,7 +739,7 @@ namespace VikingLib.UI.Tooltip
                                 if (bleedPct > 0.001f)
                                 {
                                     string bleedStr = FormatRange(kvp.Value.Min * bleedPct, kvp.Value.Max * bleedPct);
-                                    sb.Append($"\n      <color=#B91C1C>+{bleedStr} Bleed</color>");
+                                    sb.Append($"\n      <color=#B91C1C>Bleed: +{bleedStr}</color>");
                                 }
                             }
                             else if (kvp.Key == DamageType.Blunt)

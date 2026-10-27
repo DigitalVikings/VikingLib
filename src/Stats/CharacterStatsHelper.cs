@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using HarmonyLib;
+using UnityEngine;
 
 namespace VikingLib.Stats
 {
@@ -16,11 +17,17 @@ namespace VikingLib.Stats
         private static readonly AccessTools.FieldRef<Character, ZSyncAnimation?> CharacterZAnimRef =
             AccessTools.FieldRefAccess<Character, ZSyncAnimation?>("m_zanim");
 
+        private static readonly AccessTools.FieldRef<Character, Animator?> CharacterAnimatorRef =
+            AccessTools.FieldRefAccess<Character, Animator?>("m_animator");
+
         public static ZNetView? GetNView(Character? character) =>
             character != null ? CharacterNViewRef(character) : null;
 
         public static ZSyncAnimation? GetZAnim(Character? character) =>
             character != null ? CharacterZAnimRef(character) : null;
+
+        public static Animator? GetAnimator(Character? character) =>
+            character != null ? CharacterAnimatorRef(character) : null;
 
         // --- Humanoid Equipment Slot Accessors ---
         private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> RightItemRef =

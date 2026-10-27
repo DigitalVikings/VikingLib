@@ -1,6 +1,6 @@
 {
   "name": "VikingLib",
-  "version_number": "0.2.1",
+  "version_number": "0.2.2",
   "website_url": "https://github.com/DigitalVikings/VikingLib",
   "description": "Modular combat mechanics, canonical status effects, and damage calculation framework for Valheim.",
   "dependencies": [

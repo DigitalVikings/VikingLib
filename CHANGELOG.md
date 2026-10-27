@@ -2,6 +2,12 @@
 
 All notable changes to **VikingLib** will be documented in this file.
 
+## [0.2.2] - 2026-10-27
+
+### Changed
+- **Calibrated Stagger Durations**: Refined stagger recovery windows across creature tiers (Minor foes ~2.0s, Standard mobs ~2.75s, Heavy elites ~4.0s, Bosses full 5.0s, and Player 2.0s baseline).
+- **Combat Dossier Formatting**: Streamlined weapon tooltip layout, attack profile headers, and keybinding prompt clarity.
+
 ## [0.2.1] - 2026-10-25
 ### Fixed
 - Fixed critical game startup error triggered by cooking station drop yield telemetry registration.
