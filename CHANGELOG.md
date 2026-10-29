@@ -2,6 +2,12 @@
 
 All notable changes to **VikingLib** will be documented in this file.
 
+## [0.2.3] - 2026-10-29
+
+### Changed
+- **Modularized Phase Handlers**: Decoupled default combat phase implementations into dedicated handler structures for improved maintainability.
+- **Skill Lifecycle Architecture**: Reorganized native skill interception patches into dedicated domain modules.
+
 ## [0.2.2] - 2026-10-27
 
 ### Changed

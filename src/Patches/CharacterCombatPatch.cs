@@ -72,6 +72,37 @@ namespace VikingLib.Patches
             return target.IsStaggering();
         }
 
+        /// <summary>
+        /// Neutralizes vanilla Valheim's secondary resistance calculation in RPC_Damage,
+        /// since VikingLib's DamagePipeline Phase 3 already evaluated and applied granular resistances.
+        /// Still computes significantModifier for damage text display without mutating hit.m_damage.
+        /// </summary>
+        public static void SafeApplyResistance(HitData hit, HitData.DamageModifiers modifiers, out HitData.DamageModifier significantModifier)
+        {
+            if (ModConfig.ModEnabled.Value)
+            {
+                var clone = hit.Clone();
+                clone.ApplyResistance(modifiers, out significantModifier);
+                return;
+            }
+
+            hit.ApplyResistance(modifiers, out significantModifier);
+        }
+
+        /// <summary>
+        /// Neutralizes vanilla Valheim's quadratic armor calculation in RPC_Damage,
+        /// since VikingLib's DamagePipeline Phase 3 already evaluated and applied granular Linear EHP mitigation.
+        /// </summary>
+        public static void SafeApplyArmor(HitData hit, float ac)
+        {
+            if (ModConfig.ModEnabled.Value)
+            {
+                return;
+            }
+
+            hit.ApplyArmor(ac);
+        }
+
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> TranspileRpcDamage(IEnumerable<CodeInstruction> instructions)
         {
@@ -79,6 +110,11 @@ namespace VikingLib.Patches
             var shouldTriggerHelper = AccessTools.Method(typeof(CharacterCombatPatch), nameof(ShouldTriggerVanillaStaggerCrit));
             var applyModMethod = AccessTools.Method(typeof(HitData), nameof(HitData.ApplyModifier), new[] { typeof(float) });
             var staggerHelper = AccessTools.Method(typeof(CharacterCombatPatch), nameof(GetVanillaStaggerMultiplier));
+            var applyResistanceMethod = AccessTools.Method(typeof(HitData), nameof(HitData.ApplyResistance),
+                new[] { typeof(HitData.DamageModifiers), typeof(HitData.DamageModifier).MakeByRefType() });
+            var safeResistanceMethod = AccessTools.Method(typeof(CharacterCombatPatch), nameof(SafeApplyResistance));
+            var applyArmorMethod = AccessTools.Method(typeof(HitData), nameof(HitData.ApplyArmor), new[] { typeof(float) });
+            var safeArmorMethod = AccessTools.Method(typeof(CharacterCombatPatch), nameof(SafeApplyArmor));
 
             var list = new List<CodeInstruction>(instructions);
             for (int i = 0; i < list.Count; i++)
@@ -99,6 +135,24 @@ namespace VikingLib.Patches
                     list[i + 1].Calls(applyModMethod))
                 {
                     list[i] = new CodeInstruction(OpCodes.Call, staggerHelper);
+                }
+
+                // 3. Neutralize vanilla ApplyResistance to avoid double resistance reduction
+                if (list[i].Calls(applyResistanceMethod))
+                {
+                    var newInst = new CodeInstruction(OpCodes.Call, safeResistanceMethod);
+                    newInst.labels.AddRange(list[i].labels);
+                    newInst.blocks.AddRange(list[i].blocks);
+                    list[i] = newInst;
+                }
+
+                // 4. Neutralize vanilla ApplyArmor to avoid double armor mitigation
+                if (list[i].Calls(applyArmorMethod))
+                {
+                    var newInst = new CodeInstruction(OpCodes.Call, safeArmorMethod);
+                    newInst.labels.AddRange(list[i].labels);
+                    newInst.blocks.AddRange(list[i].blocks);
+                    list[i] = newInst;
                 }
             }
             return list;
